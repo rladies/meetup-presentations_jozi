@@ -1,0 +1,323 @@
+---
+title: "RLadies: Starwars & Plotly"
+# output: github_document
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# load all required packages
+library(fivethirtyeight)
+data(package = 'fivethirtyeight')
+
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(knitr)
+
+```
+**References**:
+
+
+## Let's look at the data
+```{r load}
+# load the data
+# data set imported from Git
+# na values = imported as spaces
+starwars = read.csv('/Users/Gabriella_Camara/Documents/RLadies/data/StarWars.csv',
+                    na.strings = c('', ' '))
+
+kable(starwars %>% head(5), title = 'Head of StarWars data')
+
+# Summary of data
+summary(starwars)
+colSums(is.na(starwars))
+
+# Favourite way to view data
+# View(starwars)
+
+# useful commands for quick snapshot
+table(starwars$Education)
+unique(starwars$Gender)
+
+```
+
+From the above, we can see that the data is pretty messy.  
+Let's see how we can clean this up.  
+I've done this pretty manually as I'm quite specific about my column name, there are alternatives: melt, unlist & lapply first row as column names etc.  
+
+```{r cleanup}
+# drop first row, don't want this to be considered as another level
+starwars = starwars[-1, ] 
+starwars = lapply(starwars, as.character) # in order to not recognise 'Response' as a factor/ level
+# note, this conversts the df to a list; we'll convert it back
+
+names(starwars) = c('RespondentID',
+                    'Seen',
+                    'Fan',
+                    'Seen.Episode1',
+                    'Seen.Episode2',
+                    'Seen.Episode3',
+                    'Seen.Episode4',
+                    'Seen.Episode5',
+                    'Seen.Episode6',
+                    'Rank.Episode1',
+                    'Rank.Episode2',
+                    'Rank.Episode3',
+                    'Rank.Episode4',
+                    'Rank.Episode5',
+                    'Rank.Episode6',
+                    'View.HanSolo',
+                    'View.LukeSkywalker',
+                    'View.PrincessLeiaOrgana',
+                    'View.Anakin Skywalker',
+                    'View.ObiWanKenobi',
+                    'View.EmperorPalpatine',
+                    'View.DarthVader',
+                    'View.LandoCalrissian',
+                    'View.BobaFett',
+                    'View.C-3P0',
+                    'View.R2D2',
+                    'View.JarJarBinks',
+                    'View.PadmeAmidala',
+                    'View.Yoda',
+                    'FirstToShoot',
+                    'Familiar.ExpandedUniverse',
+                    'Fan.ExpandedUniverse',
+                    'Fan.Franchise',
+                    'Gender',
+                    'Age',
+                    'Income',
+                    'Education',
+                    'Region')
+
+
+starwars = lapply(starwars, as.factor) # notice number of factor (2 = Yes & No)
+starwars = as.data.frame(starwars)
+
+# Replace movie names with 'Yes' for seen
+starwars[4:9] = sapply(starwars[4:9], function(x)
+                                 ifelse(is.na(x), NA, 'Yes'))
+
+
+kable(starwars %>% head(5))
+```
+
+That's better, at most I think I can work with this data.  
+We'll change it later if need be.  
+
+## Objectives
+From our dataset, there are a couple of thinsg we'd like to get sight of.  
+Most of our data is categorical, so it seems that bar charts will be our go-to as they best display categories.  
+
+* Get a grip of Plotly as a visualization technique. See [Plotly cookbook](https://plotly-book.cpsievert.me/index.html)  
+* Understand our viewership by different categories  
+* Understand views & ranks per Episode of movie  
+* Understand favourability of characters  
+
+## Plotly overview
+**Insert novice opionion & understanding here**
+
+## Viewership
+Let's explore those best invested in the Starwars Franchise & a galaxy far-far away ...  
+
+```{r views}
+# Viewership
+# 1. just by seen
+# 2. Add gender (color) 
+# 3 layout = stacked
+p1 = starwars %>%
+     plot_ly(x = ~Seen) %>%
+     add_histogram()
+p1
+
+
+# color adds another 'dimension'
+# additioanlly, let's consider the lists passed to layouts
+p2 = starwars %>%
+     plot_ly(x = ~Seen, color = ~Gender) %>%
+     add_histogram() %>%
+     layout(title = 'Viewership by Gender',
+            xaxis = list(tickangle = -45),
+            yaxis = list(title = 'Count'))
+p2
+
+# let's stack the bars instead
+p3 = starwars %>%
+     plot_ly(x = ~Seen, color = ~Age) %>%
+     add_histogram() %>%
+     layout(title = 'Viewership by Age',
+            xaxis = list(tickangle = -45),
+            yaxis = list(title = 'Count'),
+            barmode = 'stack') 
+p3
+
+# I'm interested in the distribution by age
+# note we're not feeding any y-values
+p4 = starwars %>%
+     plot_ly(x = ~Age) %>%
+     add_histogram()
+p4
+# an almost (not) normal bell curve/ uniform?
+```
+Things to note:  
+* 1186 observations (total number of rows); we know unique by number of levels  
+* Majority have seen the movie  
+
+## Let's explore the opions of those that have seen the movies:
+### Which StarWars movies have you seen?
+```{r}
+# only trust those that have seen the movies; filter data to go forward here
+# pipes (makkgrittr - spelling to be corrected)
+starwars_view = starwars %>%
+                filter(Seen == 'Yes')
+
+# tidy: objective to create correct variable & observations
+# tidyr package
+episodes_seen = starwars_view %>% 
+                select('Seen.Episode1':'Seen.Episode6') %>%
+                gather(Episode, Response) %>%
+                drop_na()
+
+# count & prop seen
+episodes_seen = episodes_seen %>%
+                group_by(Episode) %>%
+                summarise(count = n()) %>%
+                mutate(prop = count/sum(count)*100)
+# Not quite what I'm looking for, this is the proportion as is, but doesn't correctly conisder the population of people who've seen the movie
+
+# let's try again
+number_seen = length(starwars_view$RespondentID)
+episodes_seen = episodes_seen %>%
+                group_by(Episode) %>%
+                summarise(count = n()) %>%
+                mutate(prop = count/number_seen*100)
+
+# let's put this on a graph
+# note difference between bars & histogram
+episodes_seen %>%
+  plot_ly(x = ~Episode, y = ~count, name = 'Count of Viewers') %>%
+  add_bars() %>%
+  add_trace(y = ~prop, name = 'Proportion of Viewers')
+# just to show the ability to add a 'trace'; not mst logical chart
+
+# change orientation
+# customize colour of bars with rgb scale (mostly a guessing game for me?)
+episodes_seen %>%
+  plot_ly(x = ~count, y = ~Episode, name = 'Count of Viewers',
+          marker = list(color = 'rgb(26, 118, 255)')) %>%
+  add_bars()
+
+# # further enrich df with ranking alongside movie
+# stars_rank = starwars_view %>% 
+#              select('RespondentID', 
+#                     'Rank.Episode1', 'Rank.Episode2', 'Rank.Episode3',
+#                     'Rank.Episode4', 'Rank.Episode5', 'Rank.Episode6') %>% 
+#              gather(Episode, Rank, -RespondentID)
+# 
+# stars_view = starwars_view %>% 
+#              select('RespondentID', 'Seen.Episode1':'Seen.Episode6') %>%
+#              gather(Episode, Response, - RespondentID) 
+# 
+# stars_full = cbind(stars_view, star_rank)
+
+```
+
+### What's the best StarWars movie?
+```{r}
+# In order to correctly compare, we can only consider the rankings of viewers that have watched all 6 movies
+
+# count yes for seen columns
+# replace_na(starwars_view, list(Seen.Episode1= 'No'))
+starwars_view[, 4:9][is.na(starwars_view[, 4:9])] = 'No'
+starwars_view$num.Seen = rowSums(starwars_view[ , 4:9] == 'Yes')
+
+starwars_all6 = starwars_view %>%
+                filter(num.Seen == 6)
+
+
+count_seen = length(starwars_all6$RespondentID)
+
+seen_all6 = starwars_all6 %>%
+            select('Rank.Episode1':'Rank.Episode6') %>%
+            gather(Episode, Rank) %>%
+            drop_na()
+
+rank_all6 = seen_all6 %>%
+            group_by(Episode, Rank) %>%
+            summarise(count = n()) %>%
+            mutate(prop = count/count_seen*100)
+
+rank_all6 %>%
+  filter(Rank == 1) %>%
+  plot_ly(x = ~Episode, y = ~count, color = I("red")
+          # text = count, textposition = 'auto'
+          ) %>%
+  add_bars() %>%
+  layout(
+    title = 'Which is your favourite StarWars movie?',
+    xaxis = list(
+      type = 'category',
+      title = 'Movie Name'
+    )
+  )
+
+# informative & interactive
+rank_all6 %>%
+  plot_ly(x = ~Episode, y = ~count, color = ~Rank) %>%
+  add_bars() %>%
+  layout(
+    title = 'Which is your favourite StarWars movie?'
+  )
+
+p1 = ggplot()
+ggplotly(p1)
+# best vs worst
+  
+```
+
+### Characters favourability rankings
+```{r}
+character_rating = starwars_view %>%
+                   select('View.HanSolo':'View.Yoda') %>%
+                   gather(Character, Rating) %>%
+                   drop_na()
+
+character_rating = character_rating %>%
+                   group_by(Character, Rating) %>%
+                   summarise(count = n())
+
+# Option 1
+character_rating %>%
+  plot_ly(x=~count, y = ~Character, color = ~Rating) %>%
+  add_bars() %>%
+  layout(
+    barmode = 'stack'
+  )
+
+# Option 2
+p1 = character_rating %>%
+     filter(Rating == c('Very favorably', 'Somewhat favorably')) %>%
+     plot_ly(x=~count, y = ~Character) %>%
+     add_bars() %>%
+     layout(
+       title = 'Favorably viewed'
+     )
+
+p2 = character_rating %>%
+     filter(Rating == 'Somewhat unfavorably') %>%
+     plot_ly(x=~count, y = ~Character) %>%
+     add_bars() %>%
+     layout(
+       title = 'Unfavorably viewed'
+     )
+
+subplot(p1, p2) %>% hide_legend()
+```
+
+## Now your turn
+* View the first to shoot?  
+* Demographics of fans?  
+
