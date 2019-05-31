@@ -1,0 +1,1 @@
+Code and output from Dr Inger Fabris-Rotelli's talk: "Intro to spatial statistics".
