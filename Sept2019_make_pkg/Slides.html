@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+  <head>
+    <title>Introduction to R package building - easier than I thought!</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="Vebashini Naidoo (@Vebash)" />
+    <link href="Slides_files/remark-css/default.css" rel="stylesheet" />
+    <link href="Slides_files/remark-css/rladies.css" rel="stylesheet" />
+    <link href="Slides_files/remark-css/rladies-fonts.css" rel="stylesheet" />
+    <link href="Slides_files/font-awesome/css/fontawesome-all.min.css" rel="stylesheet" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# Introduction to R package building - easier than I thought!
+## ⚔<br/>with xaringan
+### Vebashini Naidoo (<span class="citation">@Vebash</span>)
+### RLadies Johannesburg
+### 2019/09/22 (updated: 2019-10-04)
+
+---
+
+
+
+
+# Keep in touch
+
+[<i class="fab  fa-twitter "></i> @Vebash](http://twitter.com/vebash)  
+[<i class="fab  fa-github "></i> @sciencificity](http://github.com/sciencificity)  
+[<i class="fas  fa-paper-plane "></i> vebashini@gmail.com](mailto:vebashini@gmail.com)
+
+---
+
+&lt;img style = "max-width: 33%; 
+              max-height = 33%; 
+              display:block; 
+              margin:auto" 
+              src="./disclaimer.jpg" 
+              width = 500/&gt;
+&lt;div style = "width: image width px; font-size: 100%; text-align:center;"&gt;
+Our package will be functional but not necessarily pretty.
+&lt;/div&gt;
+
+&lt;img style = "max-width: 90%; 
+              max-height = 90%; 
+              display:block; 
+              margin:auto" 
+              src="./1.gif" 
+              width = 500px/&gt;
+
+
+---
+class: inverse, center, middle
+
+# Get Started
+### "In fact, anyone can and should write R packages!"&lt;sup&gt;1&lt;/sup&gt;
+
+.footnote[
+[1] Quote from Jeff Leek and Shannon Ellis  
+]
+---
+
+# What's a package anyway?
+
+Packages are organised units of reproducible R code. 
+
+A _package_ includes:
+- __`R functions`__&lt;sup&gt;1&lt;/sup&gt;: abstraction of details - user only needs to know what inputs and outputs are needed.
+- __`Documentation`__: describing how to use the functions.
+- __`Data`__.
+
+It's a _friendly_ way to distribute your code, or even _reuse_ it yourself! 
+
+.footnote[
+[1] We expose __`user-facing functions`__, so the user/future you does not need to be concerned with the supporting/helper functions.
+]
+&lt;img style = "max-width: 90%; 
+              max-height = 90%; 
+              display:block; 
+              margin:auto" 
+              src="./sodapop.gif" 
+              width = 350px/&gt;
+
+---
+# Ways to install a package&lt;sup&gt;1&lt;/sup&gt;
+
+* Packages are mainly stored on [Comprehensive R Archive Network aka CRAN](https://cran.r-project.org/web/packages/available_packages_by_name.html) --&gt; we install these using:
+Menu Item `Tools -&gt; Install Packages ...` OR
+
+```r
+          install.packages('ggplot2')
+```
+* There are also many packages on GitHub --&gt; we install these using a helper package `devtools`:
+
+```r
+          install.packages('devtools')
+          devtools::install_github("sciencificity/werpals")
+```
+          
+Then we load the package to make the functionality available using:
+
+```r
+  library(werpals)
+```
+        
+.footnote[
+[1] Further to these there's [bioconductor](https://www.bioconductor.org/), but having never worked with it I just mention it here for those interested.
+]        
+---
+# Name that thing
+.pull-left[&lt;img src = "./naming_things_is_hard.png" width = 320px&gt;]
+
+.pull-right[
+### Formal Naming Requirements
+- Must only consist of letters, numbers and periods i.e.  `.`; 
+- Must start with a letter; and
+- Cannot end with a period. 
+
+You can’t use either hyphens or underscores in the package name. 
+]
+
+__Other Tips:__
+- It is recommended to avoid using periods in the package name, as it is easily confused with function names in the OO system of R.
+- Find a name that is easy to Google.
+- Avoid using capitalisation. For e.g. I wanted to name the original pkg `disneycolouR` but Hadley advises otherwise 😄.
+- Try and find a name that evokes what the pkg does.
+- Add an __`r`__ to the name, if it makes sense e.g. tidyr, dplyr etc.
+
+---
+# Whodunnit? Colonel Mustard in the Kitchen with the Trophy?
+### Let's start a Rumour
+
+&lt;img style = "max-width: 90%; 
+              max-height = 90%; 
+              display:block; 
+              margin:auto" 
+              src="./clue.png" 
+              width = 350px/&gt;
+
+- We can create an R script file and place it in the __`/R`__ folder, or we can use the `usethis` package. 
+
+  
+  ```r
+      usethis::use_r("cluerumour")
+  ```
+- Fill in the body of the function(s)  
+---
+# Create a package
+
+- Check if the name you're thinking about 🤔 is available? 
+
+.pull-left[
+
+```r
+install.packages("available")
+available::available("cluerumour")
+```
+]
+.pull-right[
+&lt;img src = "./available.png" width = 320px&gt;
+]
+
+- Create a new R Project from the menu:
+
+  `File -&gt; New Project -&gt; New Directory -&gt; R Package` [Initialise with a git repo]
+  
+  &lt;img src = "./create_pkg.png" width = 300px&gt;
+---
+class: inverse, center, middle
+# What have we got?
+---
+# Structure of a package
+- DESCRIPTION : the metadata of the package (package name, version, author, maintainer, dependencies etc.)
+- NAMESPACE : how your package interacts with other packages (what does the package import) and what you make available to the user (what does the package export).
+- R/ : code files
+- man/ : documentation files
+- data/ : data
+- .Rbuildignore : describes what will be ignored when the package is built
+
+---
+# New "Build" tab in the pane where "History" and "Environment" show
+&lt;img style = "max-width: 100%; 
+              max-height = 100%; 
+              display:block; 
+              margin:auto" 
+              src="./build_tool.gif" 
+              width = 700px/&gt;
+---
+# Some cleanup and config
+
+- If you created the pkg without bringing your own code in, a default "R/hello.R" file and "man/hello.Rd" will be created. Delete these files.
+- Configure your build tools: `Build Tab -&gt; More -&gt; Configure Build Tools...`.
+  * ✅ Generate documentation with Roxygen and 
+  * Click Configure...: ✅ "Install and Restart" or ✅ "Build and Reload" whichever is available on your configure.
+- Delete the `NAMESPACE` file to regenerate this later.
+
+&lt;img style = "max-width: 100%; 
+              max-height = 100%; 
+              display:block; 
+              margin:auto" 
+              src="./config.gif" 
+              width = 600px/&gt;
+---
+# Building and Testing
+
+- Check Package: In Build Pane -&gt; click ✅ Check OR run
+
+  
+  ```r
+  devtools::check()
+  ```
+- You should see some warnings about a license, and the undocumented functions.
+- In our case depending on the file you imported (if you used my test file) you'd get additional warnings about the imports which are not declared.
+
+---
+# Update __Description__ File
+&lt;img style = "max-width: 100%; 
+              max-height = 100%; 
+              display:block; 
+              margin:auto" 
+              src="./self_description.png" 
+              width = 450px/&gt;
+- The contents of the description file are pretty self explanatory.
+- Change `Author:` to `Authors@R:` with value
+  
+  ```r
+    person("Vebash", "Naidoo", 
+           email = "test@thatplace.co.za", role = c("aut", "cre"))
+  ```
+- The min necessary, is an Author (aut) and Maintainer (cre); the above line makes the `Maintainer:` field redundant so you may remove it.
+- Run the ffg. to create a license - it will update the DESCRIPTION file:
+  
+  ```r
+  usethis::use_mit_license("Vebash Naidoo")
+  ```
+- Add a `Depends: R (&gt;= 3.3.0)` for a minimal R version your package would need.
+---
+# Take it for a spin
+
+- Usually you would test your functions but loading it into the workspace or sourcing the file.
+
+- Tbh, I did run my functions this way. I created the functions outside of the package and then loaded the code file I wanted included in my package at the Project creation step.
+- Even if you built your scripts outside of the project, you should test it here using the `devtools` package as follows:
+  
+  ```r
+  devtools::load_all()
+  ```
+  
+&lt;img style = "max-width: 90%; 
+              max-height = 90%; 
+              display:block; 
+              margin:auto" 
+              src="./test_fn1.png" 
+              width = 600px/&gt;  
+---
+# Git .... outa here
+### Setup the Git connection
+- Go to `GitHub -&gt; Repositories -&gt; Click the` &lt;span style="color:green"&gt;"New"&lt;/span&gt; `button` to create a new repo.
+
+- Back in RStudio, in the __Terminal__ run:
+
+  git remote add origin https://github.com/yourname/cluerumour.git
+  
+- Optional - In the RStudio __Console__ run: 
+
+  `usethis::use_git_config(user.name = "Your Name", user.email = "YourName@thatplace.com")`
+
+- __RStudio Git Tab__: `Click Commit -&gt; choose files to commit -&gt; Add a commit message -&gt; Click Commit`
+
+- Thereafter exit the Commit window, and in your RStudio __terminal__ window type:
+
+  git push -u origin master
+
+- The `Push` and `Pull` buttons should now be available in the Git tab.
+---
+# Document Functions
+&lt;img style = "max-width: 90%; 
+              max-height = 90%; 
+              display:block; 
+              margin:auto" 
+              src="./document.jpg" 
+              width = 200px/&gt;  
+- Navigate inside your function, then access menu item `Code -&gt; Insert Roxygen Skeleton` to insert a documentation template. 
+- Things to consider: 
+  * Is this a helper function? Or one that is user-facing? Only `@export` user-facing functions.
+  * Does your function use any packages? __DO NOT__ use library(xxx). Instead qualify the function you're using from which package it comes from e.g. `tidyr::pivot_longer()` and include the comment
+            `#'@importFrom tidyr pivot_longer`
+---
+# Roxygen magic
+
+- Okay we have included our imports and exports in the NAMESPACE file created by Roxygen, but the DESCRIPTION file will generate an error - try it ... run `devtools::check()`.
+- To add the Imports&lt;sup&gt;1&lt;/sup&gt; part into your DESCRIPTION file run:
+`usethis::use_package("purrr") # Defaults to imports`
+
+.footnote[
+[1] Imports is something your functions use directly, if you want to add a `Suggests` to your package use: `usethis::use_package("purrr", "Suggests")`. Suggested packages are usually not directly used by your functions - it's something you may have used to test your package for example.
+]  
+---
+# Roxygen magic ...
+
+&lt;img style = "max-width: 100%; 
+              max-height = 100%; 
+              display:block; 
+              margin:auto" 
+              src="./doc.gif" 
+              width = 800px/&gt;
+          
+---
+# Unit tests
+&lt;img style = "max-width: 100%; 
+              max-height = 100%; 
+              display:block; 
+              margin:auto" 
+              src="./testing.png" 
+              width = 500px/&gt;
+- `Build -&gt; More -&gt; Clean and Rebuild`
+
+- In console run: `usethis::use_testthat()` - creates a test folder and necessary files.
+
+- The tests aren't written for you, the setup is created!
+
+- In console run: `usethis::use_test("filename")`
+
+- Fill out your tests and then run the tests using:
+    
+    ```r
+    devtools::load_all()
+    devtools::test()
+    ```
+---
+# Create a Readme file
+- A skeleton of a Readme file will be generated if you use: 
+
+    `usethis::use_readme_rmd()`
+
+- Knit the document to create the Readme.
+
+- Commit and Push your files to GitHub
+
+
+&lt;img style = "max-width: 100%; 
+              max-height = 100%; 
+              display:block; 
+              margin:auto" 
+              src="./high_five.gif" 
+              width = 500px/&gt;
+---
+class: inverse, center, middle
+
+# The Ultimate Test!
+&lt;img style = "max-width: 100%; 
+              max-height = 100%; 
+              display:block; 
+              margin:auto" 
+              src="./anticipation.gif" 
+              width = 500px/&gt;
+---
+# ..... Does it load?
+
+- Go to your folder where your installs download. Delete the package you just created.
+
+- Open a fresh RStudio session.
+
+- Run the install as per your Readme file on GitHub:
+      
+      ```r
+      devtools::install_github("sciencificity/cluerumour")
+      ```
+- Test your package and the help pages load etc.      
+---
+# So why is this not pretty?
+So, I did say the package will be functional but not necessarily pretty. Some additional things to do:
+1. Run Travis to check your package install on linux, ubuntu etc. `usethis::use_travis()` [Your package has to be public].
+2. Run covr to check package coverage.
+3. It was a trivial example function and we did not have any data in our package.
+3. But all in all ....
+
+&lt;img style = "max-width: 100%; 
+              max-height = 100%; 
+              display:block; 
+              margin:auto" 
+              src="./nice.gif" 
+              width = 300px/&gt;
+---
+# Resources
+
+1. [Dev version: R packages book](https://r-pkgs.org/)
+1. [Complete original version: R packages book](http://r-pkgs.had.co.nz/)
+1. [Pre-flight check list](https://github.com/rdpeng/daprocedures/blob/master/lists/Rpackage_preflight.md)
+1. [Writing an R package from scratch](https://hilaryparker.com/2014/04/29/writing-an-r-package-from-scratch/)
+1. [R package development videos](https://www.youtube.com/playlist?list=PLk3B5c8iCV-T4LM0mwEyWIunIunLyEjqM)
+1. [R package primer](http://kbroman.org/pkg_primer/)
+1. [RStudio video on package writing - this is the resource I used originally!](https://resources.rstudio.com/wistia-rstudio-essentials-2/rstudioessentialsprogrammingpart3redux)
+
+---
+
+# Git - Some tips &amp; Useful commands (Windows)
+
+## Using Git Bash or the Terminal window in RStudio
+- `pwd`: Tells you where you are currently, literally print working directory.
+&lt;img src = "./git1.png" width = 300px&gt;
+
+- `ls`: Gives you a list of files and folders in your current working directory.
+&lt;img src = "./git2.png" width = 600px&gt;
+
+- `mkdir name_of_folder`: Makes a new directory called **name_of_folder** in the current working directory.
+&lt;img src = "./git3.png" width = 600px&gt;
+
+---
+# Git - Some tips &amp; Useful commands continued ...
+- `cd name_of_folder`: Places you in the **name_of_folder** directory.
+&lt;img src = "./git4.PNG" width = 400px&gt;
+
+- `git init`: Initialises a git repo in the directory you run the command from. You should now see a .git folder if you run `ls` after the initialisation.
+&lt;img src = "./git5.PNG" width = 420px&gt;
+
+- `git config user.name "Firstname Surname"` AND `git config user.email "test@testexample.com"`: Adds the user name and email address to the config file.
+&lt;img src = "./git6.PNG" width = 500px&gt;
+
+---
+# Git - Some tips &amp; Useful commands continued ...
+- `cat .git/config`: Displays the contents of the config file.
+&lt;img src = "./git7.PNG" width = 400px&gt;
+
+- `git log`: Shows you the history of your repo, starting at the latest commit and working backwards.
+&lt;img src = "./git8.PNG" width = 600px&gt;
+
+---
+
+class: center, middle
+
+# Thanks!
+
+Slides created via the R package [**xaringan**](https://github.com/yihui/xaringan).
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>
