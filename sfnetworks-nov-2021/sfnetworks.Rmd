@@ -1,0 +1,405 @@
+---
+title: "sfnet_example"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This is an example of how to access road network data, how to store and manipulate it using sfnetworks, and how to visualise it using ggplot.
+
+```{r libraries, include=FALSE}
+library(osmextract);library(sf);library(sfnetworks);library(igraph);library(tidygraph);library(dplyr)
+```
+
+
+# osmextract
+First, we obtain the roads data from OpenStreetMap. We do this using the osmextract package, first exploring which data is available.
+```{r osmextract explore}
+#List which providers are available with this version of osmextract
+oe_providers()
+
+#?geofabrik_zones
+class(geofabrik_zones)
+
+par(mar = rep(0.1, 4))
+
+plot(geofabrik_zones[geofabrik_zones$level == 2, "name"], key.pos = NULL, main = NULL)
+
+sa_geofabrik <- oe_match("South Africa", provider = "geofabrik")
+
+oe_match_pattern("South Africa")
+```
+
+I decided to download the data from geofabrik. I've commented this out since I've already downloaded the data. Note that it is important to convert the data which you get from osm, to .gpkg format.
+```{r osmextract download}
+#Download
+#oe_download_directory()
+
+# oe_download(
+#   file_url = sa_geofabrik$url,  
+#   file_size = sa_geofabrik$file_size,
+#   provider = "geofabrik",
+#   download_directory = "path"
+# )
+
+#geofabrik_sa_gpkg = oe_vectortranslate("path/geofabrik_south-africa-latest.osm.pbf")
+
+```
+
+After this, I opened the .gpkg file in QGIS, cropped the data so that it would only include roads in Gauteng, and converted it to a shapefile, namely GTRoads.shp.
+
+(There are almost certainly ways to do this in R, but I'm a simple person - I need pictures. I like to inspect new data visually in QGIS to make sure all is well!)
+
+# sfnetworks
+
+## Importing and preprocessing data
+
+First, we import the shapefile data. We import both data on administrative units (wards in Gauteng, South Africa) as well as the roads data sourced from OSM. Both the wards and the roads data are now sf objects. 
+
+It is not possible to import shapefile data directly as an sfnetworks object. We first import it as an sf object, then do a bit of pre-processing before converting it to an sfnetworks object.
+```{r import shapefile data}
+library(ggplot2)
+
+## Import & convert data
+wards.wgs <- st_read("E:/_PhD/Wards Paper/OneWardFull/Data/Wards.shp")
+roads.data.wgs <- st_read("E:/_PhD/Wards Paper/OneWardFull/Data/Roads.shp")
+
+ggplot() + 
+  geom_sf(data = wards.wgs, color="midnightblue", size = 1, fill = "slateblue1") + 
+  ggtitle("Wards")
+  
+ggplot() + 
+  geom_sf(data = wards.wgs, color="midnightblue", size = 1, fill = "slateblue1") + 
+  ggtitle("Wards with roads") + 
+  geom_sf(data = roads.data.wgs, color="purple4", size = 0.5)
+
+```
+
+After this, we project the data. This is optional, since sfnetworks does not require the data to be in a projection. However, other packages including spatstat do require the data to be projected, so working with projected data makes interoperability easier. But this is up to you as the user. :)
+
+Due to the geographical location of the data, I used UTM Zone 35S, with EPSG code 32736. This is supplied to st_transform (which reprojects data) as the crs parameter.
+
+```{r project}
+#project data
+wards <- st_transform(wards.wgs, 32736)
+roads.data <- st_transform(roads.data.wgs, 32736)
+
+roads.data
+```
+For this analysis, I decided to keep only certain types of roads. The chunk below filters the sf object appropriately (to keep only main roads).
+
+```{r select road types}
+wanted_roads<-c("motorway","motorway_link","primary","primary_link",
+                "secondary","secondary_link","tertiary","tertiary_link",
+                "trunk","trunk_link")
+roads.data<-roads.data[roads.data$fclass %in% wanted_roads,]
+
+ggplot() + 
+  geom_sf(data = wards, color="midnightblue", size = 1, fill = "slateblue1") + 
+  ggtitle("Wards with main roads") + 
+  geom_sf(data = roads.data, color="purple4", size = 0.5) +
+  coord_sf()
+
+```
+
+Now that we have the roads we want, we are ready to conver to sfnetworks - right? Not yet! sfnetworks does not like multilinestrings. We first have to cast the data to linestring. This will give a warning stating that the attributes are being repeated for all sub-geometries, and that this may not be accurate. (For example, if a multilinestring has a given speed limit associated with it, the linestrings will each have that speed limit.) In our case, this makes sense, and so we do not spend too much time worrying about the warning.
+
+```{r linestrings}
+roads.data.lines <- st_cast(roads.data, "LINESTRING")
+```
+
+Are we there yet...? Not quite! The final step before converting the sf object to an sfnetworks object is to round the coordinates. It can happen that line endpoints that really should be touching, are in slightly different places due to some error during data capturing. Reducing the precision of coordinates will ensure that they are in the same place, thereby allowing sfnetworks to connect the lines.
+```{r round coordinates}
+st_geometry(roads.data.lines) = st_geometry(roads.data.lines) %>%
+  lapply(function(x) round(x, 0)) %>%
+  st_sfc(crs = st_crs(roads.data.lines))
+```
+
+## Convert to sfnetworks
+
+Once the geometry is linestring and coordinate precision has been reduced, we convert the road network (currently an sf object) to an sfnetworks object. Note the options used in this case. 
+
+Setting directed=FALSE means that we are creating an undirected graph. OSM does not typically contain directionality data in a way that can readily be transferred to a graph. Additionally, road networks typically are undirected, with roads being two-way.
+
+(P.S.: If you want to include both one- and two-way roads, you will have to create a directed graph, and include two edges for each two-way road - one in each direction. This can absolutely be done, but we won't do it here.)
+
+Setting length_as_weight=TRUE means that we include a weight column to the object, and that the weight column is equal to the length of the segments. This should technically not be done before data cleaning (and hence that version has been commented out). The reason is that, once we begin to clean the data, we will be splitting some lines and joining others together, thereby changing the length of the road segments. A better approach is to re-create the cleaned sfnetworks object at the end of the cleaning process, and then specify length as weight. This is the approach we will be taking.
+
+```{r convert to sfnetworks}
+roads <- as_sfnetwork(roads.data.lines, directed = FALSE)
+
+#roads <- as_sfnetwork(roads.data.lines, directed = FALSE, length_as_weight = TRUE)
+
+roads
+```
+
+## Data cleaning
+
+### 1. Simplify
+The first data cleaning step is to simplify the road network. This changes the graph from a multigraph to a simple graph, which is required for many graph operations.
+
+```{r}
+simple = roads %>%
+  activate("edges") %>%
+  arrange(edge_length()) %>%
+  filter(!edge_is_multiple()) %>%
+  filter(!edge_is_loop())
+
+simple
+```
+
+The first data cleaning step is to simplify the road network. This changes the graph from a multigraph to a simple graph, which is required for many graph operations.
+
+### 2. Subdivide
+Next, we subdivide edges. sfnetworks only creates nodes where the endpoints of lines meet. However, it can happen that roads are connected at interior points (a point that defines the shape of a line). Think of a road that connect to multiple other roads, but was captured as a single line. sfnetworks will only make a node at that road's endpoint, and not at the points where it meets other roads. In that case, we want to create nodes at these points. A common concern is that this will destroy overpasses or underpasses. However, this is not a problem, since the subdivide function only creates nodes at interior points and endpoints.
+```{r}
+subdivision = convert(simple, to_spatial_subdivision)
+
+overpasses = subdivision %>%
+  activate("edges") %>%
+  st_filter(wards[1,], .predicate = st_intersects) %>% 
+  filter(edge_crosses(.E())) %>% 
+  activate ("nodes") %>% 
+  filter(!node_is_isolated())
+plot(overpasses)
+```
+
+### 3. Smooth pseudo nodes
+
+Next, we smooth away pseudo nodes in order to reduce complexity. Pseudo nodes are nodes that do not define the connectivity of the road network - that is to say, removing the node will not change the connectivity. This is an optional step, since pseudo-nodes might define sections of a road that have different attribute values (e.g. different speed limits). In this case however, we are not concerned with the possibility of losing some attribute information, so we go ahead.
+
+```{r smooth}
+smoothed = convert(subdivision, to_spatial_smooth)
+```
+
+### 4. Simplify intersections
+
+Finally, we simplify intersections. It can happen that the endpoints of lines at a 4-way intersection do not quite meet, and that their endpoints are therefore stored as separate nodes connected by short edges.
+
+First, we cluster the nodes using the dbscan method, which clusters points in Euclidean space. 
+
+```{r simplify intersections 1}
+library(dbscan)
+
+# Retrieve the coordinates of the nodes.
+node_coords = smoothed %>%
+  activate("nodes") %>%
+  st_coordinates()
+
+# Cluster the nodes with the DBSCAN spatial clustering algorithm.
+# We set eps = 1 such that:
+# Nodes within a distance of 1 from each other will be in the same cluster.
+# We set minPts = 1 such that:
+# A node is assigned a cluster even if it is the only member of that cluster.
+clusters = dbscan(node_coords, eps = 1, minPts = 1)$cluster
+
+# Add the cluster information to the nodes of the network.
+clustered = smoothed %>%
+  activate("nodes") %>%
+  mutate(cls = clusters)
+```
+
+Since nodes that are close in Euclidean space may not be connected on the network, the second step is to verify that these clustered nodes are in fact connected on the network.
+
+```{r simplify intersections 2}
+clustered = clustered %>%
+  mutate(cmp = group_components())
+```
+
+Finally, we contract the network. This takes the (Euclidean) centroid of the cluster and turns it into a node, deletes the individual nodes that were in the cluster, and moves the edges so that they end (and hence connect) at the centroid. The contraction function is a spatial morpher function, which we will look at in more detail later.
+
+```{r simplify intersections 3}
+contracted = convert(
+  clustered,
+  to_spatial_contracted,
+  cls, cmp,
+  simplify = TRUE
+)
+```
+
+### 5. Re-create sfnetworks object
+
+Now that our road network has been downloaded from OSM, projected, pulled into sfnetworks and cleaned, only one step remains: accurately calculating edge weights. This is specific to our application - you may not want to use lengths as weights, in which case you can skip this step.
+
+First, we convert the road network from the last step into an sf object. We then convert it back to sfnetworks, this time using the length_as_weight=TRUE option.
+
+```{r lengths as weight}
+contracted.sf <- contracted %>% 
+  activate("edges") %>% 
+  st_as_sf() 
+roads.clean <- as_sfnetwork(contracted.sf, directed = FALSE, length_as_weight = TRUE)
+```
+
+For comparison, we visualise the results of data cleaning on one of the wards. Note that the cleaned road network is much cleaner; however, it is technically possible that apparent mistakes may occur.
+
+We also compare the number of nodes and edges between the original and clean roads.
+
+```{r visualise results}
+
+roads.orig.1 <- roads %>%
+  activate("nodes") %>%
+  st_filter(wards[10,], .predicate = st_intersects) %>% 
+  filter(!node_is_isolated()) %>% 
+  activate("edges")
+autoplot(roads.orig.1)
+
+roads.clean.1 <- roads.clean %>%
+  activate("nodes") %>% 
+  st_filter(wards[10,], .predicate = st_intersects) %>% 
+  filter(!node_is_isolated()) %>% 
+  activate("edges")
+autoplot(roads.clean.1)
+
+roads
+roads.clean
+```
+
+# Visualisation
+
+There are two main ways to visualise sfnetworks objects. The first is by using the autoplot function. This is a great way for obtaining simple visualisations: it shows the road network with its edges and nodes. We have already seen some examples of this.
+
+```{r autoplot}
+autoplot(roads.clean.1)
+```
+
+The autoplot function is quick & easy to use. However, if you want some really nice visualisations, the best way to obtain these is to convert the sfnetworks object into an sf object using the st_as_sf() function, and then use ggplot. At this stage, ggplot does not speak to sfnetworks.
+
+We can overlay the plot of the roads in the above image, over the ward geometry using this approach. Note the importance of activating the correct network element, namely edges instead of nodes.
+
+```{r ggplot}
+roads.clean.data <- roads.clean %>% 
+  activate("edges") %>% 
+  st_as_sf()
+
+ggplot() + 
+  geom_sf(data = wards, color="midnightblue", size = 1, fill = "slateblue1") + 
+  ggtitle("Wards with main roads") + 
+  geom_sf(data = roads.clean.data, color="purple4", size = 0.5)
+```
+
+We can of course also plot the nodes, either by themselves or on top of the road network.
+
+```{r ggplot nodes}
+roads.clean.points <- roads.clean %>% 
+  activate("nodes") %>% 
+  st_as_sf()
+
+ggplot() + 
+  geom_sf(data = wards, color="midnightblue", size = 1, fill = "slateblue1") + 
+  ggtitle("Wards with intersections and endpoints") + 
+  geom_sf(data = roads.clean.points, color="purple4", size = 1)
+
+ggplot() + 
+  geom_sf(data = wards, color="midnightblue", size = 1, fill = "slateblue1") + 
+  ggtitle("Wards with intersections and endpoints") + 
+  geom_sf(data = roads.clean.data, color="purple4", size = 0.5) +
+  geom_sf(data = roads.clean.points, color="purple4", size = 1)
+```
+
+# Applications
+
+Now that we have a clean road network and know how to plot it, it's time to look at some applications. We will consider two applications that I used in my workflow, namely clustering and routing. As part of my research, I used network clustering to identify clusters of nodes, obtained the centroids of these clusters, and projected them onto the road network. I then calculated the distances between them.
+
+## Clustering
+There are various algorithms for clustering nodes on a weighted graph. In the code chunk below, we use Louvain clustering.
+
+```{r louvain}
+road.louvain <- roads.clean.1 %>%
+      activate("nodes") %>%
+      mutate(louvain = as.factor(group_louvain()))
+
+plot(st_geometry(road.louvain, "edges"), main = "Grouped nodes")
+plot(st_as_sf(road.louvain)["louvain"], key.pos = NULL, pch = 20, add = TRUE)
+```
+
+Having obtained the clusters, we now calculate the cluster centroids... 
+
+```{r centroids}
+road.louvain.nodes = road.louvain %>% 
+  activate("nodes") %>% 
+  st_as_sf()
+coords <- as.data.frame(st_coordinates(road.louvain.nodes))
+coords$louvain <- road.louvain.nodes$louvain
+
+plot(st_geometry(road.louvain, "edges"), main = "Grouped nodes")
+plot(st_as_sf(road.louvain)["louvain"], key.pos = NULL, pch = 20, add = TRUE)
+
+l = length(unique(road.louvain.nodes$louvain))
+centroids <- as.data.frame(matrix(c(1:l,rep(0,l*3)),nrow=l,ncol=4))
+colnames(centroids) <- c("Group", "X", "Y", "Node")
+for (i in 1:l){
+  cluster <- coords[coords$louvain==i,]
+  #print(cluster)
+  centroids[i,2] <- mean(cluster$X)
+  centroids[i,3] <- mean(cluster$Y)
+  point <- st_sfc(st_point(c(centroids[i,2],centroids[i,3])),crs=32736)
+  centroids[i,4] <- st_nearest_feature(point, road.louvain)
+  plot(point, pch = 8, cex = 2, lwd = 2, add = TRUE)
+}
+
+```
+...and project them onto the nearest node on the network. (It is also possible to project points to the nearest edge - details in the GitHub articles.)
+
+```{r}
+plot(st_geometry(road.louvain, "edges"), main = "Grouped nodes")
+plot(st_as_sf(road.louvain)["louvain"], key.pos = NULL, pch = 20, add = TRUE)
+
+for (i in 1:l){
+  cpoint <- st_geometry(road.louvain, "nodes")[centroids[i,4]]
+  plot(cpoint, pch = 8, cex = 2, lwd = 2, add = TRUE)
+}
+```
+
+## Routing
+sfnetworks supports one-to-one routing and one-to-many routing. It does not support many-to-many routing, but it is able to calculate origin-destination matrices (i.e. many-to-many distances).
+
+First, we obtain the origin-destination (OD) matrix between all the points on the above network. Note that the diagonal is zero, since there is no cost to travel between a node and itself. Costs of an infinite value (inf) indicate that there is no route between these nodes - i.e. they are in different components of the network.
+```{r distances}
+OD.centroids <- st_network_cost(roads.clean.1, from=centroids[,4], to=centroids[,4])
+```
+
+It is possible to specify different vectors in the from and to arguments, and they need not be of the same dimensions. It is also possible to leave out the from and to arguments. In that case, the distance matrix will be calculated on all the nodes in the supplied network (in our case, 231 nodes).
+```{r distances 2}
+OD.all <- st_network_cost(roads.clean.1)
+```
+
+In the case of one-to-one or one-to-many routing, sfnetworks is able to calculate the exact shortest path between nodes. It is also possible to plot this shortest path. The nodes do not need to be on the network: if they are not, sfnetworks will first project them onto the nearest network node, and then calculate the distance.
+```{r routing}
+node1 <- st_geometry(roads.clean.1, "nodes")[centroids[1,4]]
+node2 <- st_geometry(roads.clean.1, "nodes")[centroids[12,4]]
+path = st_network_paths(roads.clean.1, from = node1, to = node2)
+
+edges <- path %>%
+  slice(1) %>%
+  pull(edge_paths) %>%
+  unlist()
+
+plot_path = function(node_path) {
+  roads.clean.1 %>%
+    activate("nodes") %>%
+    slice(node_path) %>%
+    plot(cex = 1.5, lwd = 1.5, add = TRUE)
+}
+
+ggplot() + 
+  geom_sf(data = wards[10,], color="midnightblue", size = 0.5, fill = "slateblue1") +
+  geom_sf(data = st_as_sf(roads.clean.1, "edges"), col = "purple4") +
+  geom_sf(data = st_geometry(roads.clean.1, "edges")[edges],col="magenta4",size=1.2) +
+  geom_sf(data = node1,col="deeppink",size=4) +
+  geom_sf(data = node2,col="mediumblue",size=4)
+
+```
+
+# Final remarks
+There are many more cool applications for sfnetworks! Some of these are showcased in the GitHub articles, including pretty visualisations and comprehensive, easy-to-understand code. The rest is up to you - see where your imagination takes you!
+
+
+
+
+
+
+
+
+
