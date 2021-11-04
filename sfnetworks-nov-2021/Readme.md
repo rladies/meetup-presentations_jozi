@@ -7,5 +7,5 @@ Renate is a PhD student in the Department of Statistics at the University of Pre
 
 Meetup Link: https://www.meetup.com/rladies-johannesburg/events/281697414/
 
-The video is here: https://youtu.be/cJCvyfVt1nw
+The video is here: https://youtu.be/2cCXUYgEtGw
 
